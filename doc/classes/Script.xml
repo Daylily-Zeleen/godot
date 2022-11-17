@@ -51,8 +51,11 @@
 		</method>
 		<method name="get_script_property_list">
 			<return type="Dictionary[]" />
+			<param index="0" name="include_usage_flags" type="int" default="4294967295" />
+			<param index="1" name="exclude_usage_flags" type="int" default="0" />
 			<description>
 				Returns the list of properties in this [Script].
+				Only properties which [code]usage[/code] flags contain in [param include_usage_flags] and not contain in [param exclude_usage_flags] will be a element of return array( default is to select all properties).
 			</description>
 		</method>
 		<method name="get_script_signal_list">

@@ -62,10 +62,13 @@ Variant Script::_get_property_default_value(const StringName &p_property) {
 	return ret;
 }
 
-TypedArray<Dictionary> Script::_get_script_property_list() {
+TypedArray<Dictionary> Script::_get_script_property_list(uint32_t include_usage_flags, uint32_t exclude_usage_flags) {
 	TypedArray<Dictionary> ret;
 	List<PropertyInfo> list;
 	get_script_property_list(&list);
+	if (include_usage_flags != UINT32_MAX || exclude_usage_flags != 0) {
+		_filter_properties(&list, include_usage_flags, exclude_usage_flags);
+	}
 	for (const PropertyInfo &E : list) {
 		ret.append(E.operator Dictionary());
 	}
@@ -140,7 +143,7 @@ void Script::_bind_methods() {
 
 	ClassDB::bind_method(D_METHOD("has_script_signal", "signal_name"), &Script::has_script_signal);
 
-	ClassDB::bind_method(D_METHOD("get_script_property_list"), &Script::_get_script_property_list);
+	ClassDB::bind_method(D_METHOD("get_script_property_list", "include_usage_flags", "exclude_usage_flags"), &Script::_get_script_property_list, DEFVAL(UINT32_MAX), DEFVAL(0));
 	ClassDB::bind_method(D_METHOD("get_script_method_list"), &Script::_get_script_method_list);
 	ClassDB::bind_method(D_METHOD("get_script_signal_list"), &Script::_get_script_signal_list);
 	ClassDB::bind_method(D_METHOD("get_script_constant_map"), &Script::_get_script_constant_map);
@@ -409,7 +412,9 @@ bool PlaceHolderScriptInstance::set(const StringName &p_name, const Variant &p_v
 	if (values.has(p_name)) {
 		Variant defval;
 		if (script->get_property_default_value(p_name, defval)) {
-			if (defval == p_value) {
+			// The evaluate function ensures that a NIL variant is equal to e.g. an empty Resource.
+			// Simply doing defval == p_value does not do this.
+			if (Variant::evaluate(Variant::OP_EQUAL, defval, p_value)) {
 				values.erase(p_name);
 				return true;
 			}
@@ -419,7 +424,7 @@ bool PlaceHolderScriptInstance::set(const StringName &p_name, const Variant &p_v
 	} else {
 		Variant defval;
 		if (script->get_property_default_value(p_name, defval)) {
-			if (defval != p_value) {
+			if (Variant::evaluate(Variant::OP_NOT_EQUAL, defval, p_value)) {
 				values[p_name] = p_value;
 			}
 			return true;

@@ -102,7 +102,7 @@ vec3 oct_to_vec3(vec2 e) {
 	vec3 v = vec3(e.xy, 1.0 - abs(e.x) - abs(e.y));
 	float t = max(-v.z, 0.0);
 	v.xy += t * -sign(v.xy);
-	return v;
+	return normalize(v);
 }
 
 #ifdef USE_INSTANCING
@@ -129,7 +129,7 @@ layout(std140) uniform SceneData { // ubo:2
 
 	mediump float ambient_color_sky_mix;
 	bool material_uv2_mode;
-	float pad2;
+	float emissive_exposure_normalization;
 	bool use_ambient_light;
 	bool use_ambient_cubemap;
 	bool use_reflection_cubemap;
@@ -142,7 +142,7 @@ layout(std140) uniform SceneData { // ubo:2
 	uint directional_light_count;
 	float z_far;
 	float z_near;
-	float pad;
+	float IBL_exposure_normalization;
 
 	bool fog_enabled;
 	float fog_density;
@@ -151,6 +151,10 @@ layout(std140) uniform SceneData { // ubo:2
 
 	vec3 fog_light_color;
 	float fog_sun_scatter;
+	uint camera_visible_layers;
+	uint pad3;
+	uint pad4;
+	uint pad5;
 }
 scene_data;
 
@@ -455,7 +459,7 @@ layout(std140) uniform SceneData { // ubo:2
 
 	mediump float ambient_color_sky_mix;
 	bool material_uv2_mode;
-	float pad2;
+	float emissive_exposure_normalization;
 	bool use_ambient_light;
 	bool use_ambient_cubemap;
 	bool use_reflection_cubemap;
@@ -468,7 +472,7 @@ layout(std140) uniform SceneData { // ubo:2
 	uint directional_light_count;
 	float z_far;
 	float z_near;
-	float pad;
+	float IBL_exposure_normalization;
 
 	bool fog_enabled;
 	float fog_density;
@@ -477,6 +481,10 @@ layout(std140) uniform SceneData { // ubo:2
 
 	vec3 fog_light_color;
 	float fog_sun_scatter;
+	uint camera_visible_layers;
+	uint pad3;
+	uint pad4;
+	uint pad5;
 }
 scene_data;
 
@@ -771,7 +779,7 @@ float get_omni_attenuation(float distance, float inv_range, float decay) {
 	nd *= nd; // nd^2
 	return nd * pow(max(distance, 0.0001), -decay);
 }
-
+#ifndef DISABLE_LIGHT_OMNI
 void light_process_omni(uint idx, vec3 vertex, vec3 eye_vec, vec3 normal, vec3 f0, float roughness, float metallic, float shadow, vec3 albedo, inout float alpha,
 #ifdef LIGHT_BACKLIGHT_USED
 		vec3 backlight,
@@ -813,7 +821,9 @@ void light_process_omni(uint idx, vec3 vertex, vec3 eye_vec, vec3 normal, vec3 f
 			diffuse_light,
 			specular_light);
 }
+#endif // !DISABLE_LIGHT_OMNI
 
+#ifndef DISABLE_LIGHT_SPOT
 void light_process_spot(uint idx, vec3 vertex, vec3 eye_vec, vec3 normal, vec3 f0, float roughness, float metallic, float shadow, vec3 albedo, inout float alpha,
 #ifdef LIGHT_BACKLIGHT_USED
 		vec3 backlight,
@@ -861,6 +871,7 @@ void light_process_spot(uint idx, vec3 vertex, vec3 eye_vec, vec3 normal, vec3 f
 #endif
 			diffuse_light, specular_light);
 }
+#endif // !DISABLE_LIGHT_SPOT
 #endif // !defined(DISABLE_LIGHT_DIRECTIONAL) || !defined(DISABLE_LIGHT_OMNI) && !defined(DISABLE_LIGHT_SPOT)
 
 #ifndef MODE_RENDER_DEPTH
@@ -920,6 +931,7 @@ void main() {
 #else
 	vec3 view = -normalize(vertex_interp);
 #endif
+	highp mat4 model_matrix = world_transform;
 	vec3 albedo = vec3(1.0);
 	vec3 backlight = vec3(0.0);
 	vec4 transmittance_color = vec4(0.0, 0.0, 0.0, 1.0);
@@ -1099,7 +1111,7 @@ void main() {
 		ref_vec = mix(ref_vec, normal, roughness * roughness);
 		float horizon = min(1.0 + dot(ref_vec, normal), 1.0);
 		ref_vec = scene_data.radiance_inverse_xform * ref_vec;
-		specular_light = textureLod(radiance_map, ref_vec, roughness * RADIANCE_MAX_LOD).rgb;
+		specular_light = textureLod(radiance_map, ref_vec, sqrt(roughness) * RADIANCE_MAX_LOD).rgb;
 		specular_light = srgb_to_linear(specular_light);
 		specular_light *= horizon * horizon;
 		specular_light *= scene_data.ambient_light_color_energy.a;
@@ -1161,7 +1173,7 @@ void main() {
 
 		float a004 = min(r.x * r.x, exp2(-9.28 * ndotv)) * r.x + r.y;
 		vec2 env = vec2(-1.04, 1.04) * a004 + r.zw;
-		specular_light *= env.x * f0 + env.y * clamp(50.0 * f0.g, 0.0, 1.0);
+		specular_light *= env.x * f0 + env.y * clamp(50.0 * f0.g, metallic, 1.0);
 #endif
 	}
 

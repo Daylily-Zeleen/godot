@@ -110,7 +110,7 @@ protected:
 	virtual void _placeholder_erased(PlaceHolderScriptInstance *p_placeholder) {}
 
 	Variant _get_property_default_value(const StringName &p_property);
-	TypedArray<Dictionary> _get_script_property_list();
+	TypedArray<Dictionary> _get_script_property_list(uint32_t include_usage_flags = UINT32_MAX, uint32_t exclude_usage_flags = 0);
 	TypedArray<Dictionary> _get_script_method_list();
 	TypedArray<Dictionary> _get_script_signal_list();
 	Dictionary _get_script_constant_map();

@@ -113,22 +113,21 @@ enum PropertyUsageFlags {
 	PROPERTY_USAGE_RESTART_IF_CHANGED = 1 << 11,
 	PROPERTY_USAGE_SCRIPT_VARIABLE = 1 << 12,
 	PROPERTY_USAGE_STORE_IF_NULL = 1 << 13,
-	PROPERTY_USAGE_ANIMATE_AS_TRIGGER = 1 << 14,
-	PROPERTY_USAGE_UPDATE_ALL_IF_MODIFIED = 1 << 15,
-	PROPERTY_USAGE_SCRIPT_DEFAULT_VALUE = 1 << 16,
-	PROPERTY_USAGE_CLASS_IS_ENUM = 1 << 17,
-	PROPERTY_USAGE_NIL_IS_VARIANT = 1 << 18,
-	PROPERTY_USAGE_INTERNAL = 1 << 19,
-	PROPERTY_USAGE_DO_NOT_SHARE_ON_DUPLICATE = 1 << 20, // If the object is duplicated also this property will be duplicated.
-	PROPERTY_USAGE_HIGH_END_GFX = 1 << 21,
-	PROPERTY_USAGE_NODE_PATH_FROM_SCENE_ROOT = 1 << 22,
-	PROPERTY_USAGE_RESOURCE_NOT_PERSISTENT = 1 << 23,
-	PROPERTY_USAGE_KEYING_INCREMENTS = 1 << 24, // Used in inspector to increment property when keyed in animation player.
-	PROPERTY_USAGE_DEFERRED_SET_RESOURCE = 1 << 25, // when loading, the resource for this property can be set at the end of loading.
-	PROPERTY_USAGE_EDITOR_INSTANTIATE_OBJECT = 1 << 26, // For Object properties, instantiate them when creating in editor.
-	PROPERTY_USAGE_EDITOR_BASIC_SETTING = 1 << 27, //for project or editor settings, show when basic settings are selected.
-	PROPERTY_USAGE_READ_ONLY = 1 << 28, // Mark a property as read-only in the inspector.
-	PROPERTY_USAGE_ARRAY = 1 << 29, // Used in the inspector to group properties as elements of an array.
+	PROPERTY_USAGE_UPDATE_ALL_IF_MODIFIED = 1 << 14,
+	PROPERTY_USAGE_SCRIPT_DEFAULT_VALUE = 1 << 15,
+	PROPERTY_USAGE_CLASS_IS_ENUM = 1 << 16,
+	PROPERTY_USAGE_NIL_IS_VARIANT = 1 << 17,
+	PROPERTY_USAGE_INTERNAL = 1 << 18,
+	PROPERTY_USAGE_DO_NOT_SHARE_ON_DUPLICATE = 1 << 19, // If the object is duplicated also this property will be duplicated.
+	PROPERTY_USAGE_HIGH_END_GFX = 1 << 20,
+	PROPERTY_USAGE_NODE_PATH_FROM_SCENE_ROOT = 1 << 21,
+	PROPERTY_USAGE_RESOURCE_NOT_PERSISTENT = 1 << 22,
+	PROPERTY_USAGE_KEYING_INCREMENTS = 1 << 23, // Used in inspector to increment property when keyed in animation player.
+	PROPERTY_USAGE_DEFERRED_SET_RESOURCE = 1 << 24, // when loading, the resource for this property can be set at the end of loading.
+	PROPERTY_USAGE_EDITOR_INSTANTIATE_OBJECT = 1 << 25, // For Object properties, instantiate them when creating in editor.
+	PROPERTY_USAGE_EDITOR_BASIC_SETTING = 1 << 26, //for project or editor settings, show when basic settings are selected.
+	PROPERTY_USAGE_READ_ONLY = 1 << 27, // Mark a property as read-only in the inspector.
+	PROPERTY_USAGE_ARRAY = 1 << 28, // Used in the inspector to group properties as elements of an array.
 
 	PROPERTY_USAGE_DEFAULT = PROPERTY_USAGE_STORAGE | PROPERTY_USAGE_EDITOR,
 	PROPERTY_USAGE_DEFAULT_INTL = PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_INTERNATIONALIZED,
@@ -148,6 +147,10 @@ enum PropertyUsageFlags {
 #define ADD_ARRAY_COUNT(m_label, m_count_property, m_count_property_setter, m_count_property_getter, m_prefix) ClassDB::add_property_array_count(get_class_static(), m_label, m_count_property, _scs_create(m_count_property_setter), _scs_create(m_count_property_getter), m_prefix)
 #define ADD_ARRAY_COUNT_WITH_USAGE_FLAGS(m_label, m_count_property, m_count_property_setter, m_count_property_getter, m_prefix, m_property_usage_flags) ClassDB::add_property_array_count(get_class_static(), m_label, m_count_property, _scs_create(m_count_property_setter), _scs_create(m_count_property_getter), m_prefix, m_property_usage_flags)
 #define ADD_ARRAY(m_array_path, m_prefix) ClassDB::add_property_array(get_class_static(), m_array_path, m_prefix)
+
+// Helper macro to use with PROPERTY_HINT_ARRAY_TYPE for arrays of specific resources:
+// PropertyInfo(Variant::ARRAY, "fallbacks", PROPERTY_HINT_ARRAY_TYPE, MAKE_RESOURCE_TYPE_HINT("Font")
+#define MAKE_RESOURCE_TYPE_HINT(m_type) vformat("%s/%s:%s", Variant::OBJECT, PROPERTY_HINT_RESOURCE_TYPE, m_type)
 
 struct PropertyInfo {
 	Variant::Type type = Variant::NIL;
@@ -717,10 +720,12 @@ protected:
 	}
 
 	Vector<StringName> _get_meta_list_bind() const;
-	TypedArray<Dictionary> _get_property_list_bind() const;
+	TypedArray<Dictionary> _get_property_list_bind(uint32_t include_usage_flags = UINT32_MAX, uint32_t exclude_usage_flags = 0) const;
 	TypedArray<Dictionary> _get_method_list_bind() const;
 
 	void _clear_internal_resource_paths(const Variant &p_var);
+
+	void _filter_properties(List<PropertyInfo> *p_list, uint32_t include_usage_flags, uint32_t exclude_usage_flags) const;
 
 	friend class ClassDB;
 

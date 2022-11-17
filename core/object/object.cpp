@@ -914,9 +914,24 @@ void Object::remove_meta(const StringName &p_name) {
 	set_meta(p_name, Variant());
 }
 
-TypedArray<Dictionary> Object::_get_property_list_bind() const {
+void Object::_filter_properties(List<PropertyInfo> *p_list, uint32_t include_usage_flags, uint32_t exclude_usage_flags) const {
+	for (int i = 0; i < p_list->size(); i++) {
+		auto pi = (*p_list)[i];
+		if ((pi.usage & include_usage_flags) == 0 || (pi.usage & exclude_usage_flags)) {
+			// Only move index when erase success.
+			if (p_list->erase(pi)) {
+				i--;
+			}
+		}
+	}
+}
+
+TypedArray<Dictionary> Object::_get_property_list_bind(uint32_t include_usage_flags, uint32_t exclude_usage_flags) const {
 	List<PropertyInfo> lpi;
 	get_property_list(&lpi);
+	if (include_usage_flags != UINT32_MAX || exclude_usage_flags != 0) {
+		_filter_properties(&lpi, include_usage_flags, exclude_usage_flags);
+	}
 	return convert_property_list(&lpi);
 }
 
@@ -1471,8 +1486,10 @@ void Object::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get", "property"), &Object::_get_bind);
 	ClassDB::bind_method(D_METHOD("set_indexed", "property_path", "value"), &Object::_set_indexed_bind);
 	ClassDB::bind_method(D_METHOD("get_indexed", "property_path"), &Object::_get_indexed_bind);
-	ClassDB::bind_method(D_METHOD("get_property_list"), &Object::_get_property_list_bind);
+	ClassDB::bind_method(D_METHOD("get_property_list", "include_usage_flags", "exclude_usage_flags"), &Object::_get_property_list_bind, DEFVAL(UINT32_MAX), DEFVAL(0));
 	ClassDB::bind_method(D_METHOD("get_method_list"), &Object::_get_method_list_bind);
+	ClassDB::bind_method(D_METHOD("property_can_revert", "property"), &Object::property_can_revert);
+	ClassDB::bind_method(D_METHOD("property_get_revert", "property"), &Object::property_get_revert);
 	ClassDB::bind_method(D_METHOD("notification", "what", "reversed"), &Object::notification, DEFVAL(false));
 	ClassDB::bind_method(D_METHOD("to_string"), &Object::to_string);
 	ClassDB::bind_method(D_METHOD("get_instance_id"), &Object::get_instance_id);

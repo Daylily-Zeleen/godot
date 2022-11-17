@@ -43,7 +43,7 @@ bool GDScriptCompiler::_is_class_member_property(CodeGen &codegen, const StringN
 		return false;
 	}
 
-	if (codegen.parameters.has(p_name) || codegen.locals.has(p_name)) {
+	if (_is_local_or_parameter(codegen, p_name)) {
 		return false; //shadowed
 	}
 
@@ -63,6 +63,10 @@ bool GDScriptCompiler::_is_class_member_property(GDScript *owner, const StringNa
 	ERR_FAIL_COND_V(!nc, false);
 
 	return ClassDB::has_property(nc->get_name(), p_name);
+}
+
+bool GDScriptCompiler::_is_local_or_parameter(CodeGen &codegen, const StringName &p_name) {
+	return codegen.parameters.has(p_name) || codegen.locals.has(p_name);
 }
 
 void GDScriptCompiler::_set_error(const String &p_error, const GDScriptParser::Node *p_node) {
@@ -141,6 +145,7 @@ GDScriptDataType GDScriptCompiler::_gdtype_from_datatype(const GDScriptParser::D
 					result.script_type_ref = script;
 				}
 				result.script_type = script.ptr();
+				result.native_type = p_datatype.native_type;
 			}
 		} break;
 		case GDScriptParser::DataType::ENUM:
@@ -354,11 +359,22 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 				if (class_node->identifier && class_node->identifier->name == identifier) {
 					res = Ref<GDScript>(main_script);
 				} else {
-					res = ResourceLoader::load(ScriptServer::get_global_class_path(identifier));
-					if (res.is_null()) {
-						_set_error("Can't load global class " + String(identifier) + ", cyclic reference?", p_expression);
-						r_error = ERR_COMPILATION_FAILED;
-						return GDScriptCodeGenerator::Address();
+					String global_class_path = ScriptServer::get_global_class_path(identifier);
+					if (ResourceLoader::get_resource_type(global_class_path) == "GDScript") {
+						Error err = OK;
+						res = GDScriptCache::get_full_script(global_class_path, err);
+						if (err != OK) {
+							_set_error("Can't load global class " + String(identifier), p_expression);
+							r_error = ERR_COMPILATION_FAILED;
+							return GDScriptCodeGenerator::Address();
+						}
+					} else {
+						res = ResourceLoader::load(global_class_path);
+						if (res.is_null()) {
+							_set_error("Can't load global class " + String(identifier) + ", cyclic reference?", p_expression);
+							r_error = ERR_COMPILATION_FAILED;
+							return GDScriptCodeGenerator::Address();
+						}
 					}
 				}
 
@@ -908,7 +924,7 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 								StringName var_name = identifier->name;
 								if (_is_class_member_property(codegen, var_name)) {
 									assign_class_member_property = var_name;
-								} else if (!codegen.locals.has(var_name) && codegen.script->member_indices.has(var_name)) {
+								} else if (!_is_local_or_parameter(codegen, var_name) && codegen.script->member_indices.has(var_name)) {
 									is_member_property = true;
 									member_property_setter_function = codegen.script->member_indices[var_name].setter;
 									member_property_has_setter = member_property_setter_function != StringName();
@@ -1119,7 +1135,7 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 				bool is_in_setter = false;
 				StringName setter_function;
 				StringName var_name = static_cast<const GDScriptParser::IdentifierNode *>(assignment->assignee)->name;
-				if (!codegen.locals.has(var_name) && codegen.script->member_indices.has(var_name)) {
+				if (!_is_local_or_parameter(codegen, var_name) && codegen.script->member_indices.has(var_name)) {
 					is_member = true;
 					setter_function = codegen.script->member_indices[var_name].setter;
 					has_setter = setter_function != StringName();
@@ -1863,6 +1879,7 @@ Error GDScriptCompiler::_parse_block(CodeGen &codegen, const GDScriptParser::Sui
 				GDScriptCodeGenerator::Address local = codegen.locals[lv->identifier->name];
 				GDScriptDataType local_type = _gdtype_from_datatype(lv->get_datatype(), codegen.script);
 
+				bool initialized = false;
 				if (lv->initializer != nullptr) {
 					// For typed arrays we need to make sure this is already initialized correctly so typed assignment work.
 					if (local_type.has_type && local_type.builtin_type == Variant::ARRAY) {
@@ -1884,14 +1901,22 @@ Error GDScriptCompiler::_parse_block(CodeGen &codegen, const GDScriptParser::Sui
 					if (src_address.mode == GDScriptCodeGenerator::Address::TEMPORARY) {
 						codegen.generator->pop_temporary();
 					}
+					initialized = true;
 				} else if (local_type.has_type) {
 					// Initialize with default for type.
 					if (local_type.has_container_element_type()) {
 						codegen.generator->write_construct_typed_array(local, local_type.get_container_element_type(), Vector<GDScriptCodeGenerator::Address>());
+						initialized = true;
 					} else if (local_type.kind == GDScriptDataType::BUILTIN) {
 						codegen.generator->write_construct(local, local_type.builtin_type, Vector<GDScriptCodeGenerator::Address>());
+						initialized = true;
 					}
 					// The `else` branch is for objects, in such case we leave it as `null`.
+				}
+
+				// Assigns a null for the unassigned variables in loops.
+				if (!initialized && p_block->is_loop) {
+					codegen.generator->write_construct(local, Variant::NIL, Vector<GDScriptCodeGenerator::Address>());
 				}
 			} break;
 			case GDScriptParser::Node::CONSTANT: {
@@ -2172,6 +2197,7 @@ Error GDScriptCompiler::_populate_class_members(GDScript *p_script, const GDScri
 
 	parsing_classes.insert(p_script);
 
+	p_script->clearing = true;
 #ifdef TOOLS_ENABLED
 	p_script->doc_functions.clear();
 	p_script->doc_variables.clear();
@@ -2194,10 +2220,24 @@ Error GDScriptCompiler::_populate_class_members(GDScript *p_script, const GDScri
 	p_script->base = Ref<GDScript>();
 	p_script->_base = nullptr;
 	p_script->members.clear();
+
+	// This makes possible to clear script constants and member_functions without heap-use-after-free errors.
+	HashMap<StringName, Variant> constants;
+	for (const KeyValue<StringName, Variant> &E : p_script->constants) {
+		constants.insert(E.key, E.value);
+	}
 	p_script->constants.clear();
+	constants.clear();
+	HashMap<StringName, GDScriptFunction *> member_functions;
 	for (const KeyValue<StringName, GDScriptFunction *> &E : p_script->member_functions) {
+		member_functions.insert(E.key, E.value);
+	}
+	p_script->member_functions.clear();
+	for (const KeyValue<StringName, GDScriptFunction *> &E : member_functions) {
 		memdelete(E.value);
 	}
+	member_functions.clear();
+
 	if (p_script->implicit_initializer) {
 		memdelete(p_script->implicit_initializer);
 	}
@@ -2211,6 +2251,8 @@ Error GDScriptCompiler::_populate_class_members(GDScript *p_script, const GDScri
 	p_script->initializer = nullptr;
 	p_script->implicit_initializer = nullptr;
 	p_script->implicit_ready = nullptr;
+
+	p_script->clearing = false;
 
 	p_script->tool = parser->is_tool();
 
@@ -2255,7 +2297,7 @@ Error GDScriptCompiler::_populate_class_members(GDScript *p_script, const GDScri
 					_set_error(vformat(R"(Could not find class "%s" in "%s".)", base->fully_qualified_name, base->path), nullptr);
 					return ERR_COMPILATION_FAILED;
 				}
-				ERR_FAIL_COND_V(!base->is_valid(), ERR_BUG);
+				ERR_FAIL_COND_V(!base->is_valid() && !base->reloading, ERR_BUG);
 			}
 
 			p_script->base = base;
@@ -2454,10 +2496,8 @@ Error GDScriptCompiler::_populate_class_members(GDScript *p_script, const GDScri
 		}
 
 #ifdef TOOLS_ENABLED
-
 		p_script->member_lines[name] = inner_class->start_line;
 #endif
-
 		p_script->constants.insert(name, subclass); //once parsed, goes to the list of constants
 	}
 
