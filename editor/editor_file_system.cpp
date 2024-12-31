@@ -1330,14 +1330,18 @@ void EditorFileSystem::_process_file_system(const ScannedDirectory *p_scan_dir, 
 
 			if (ResourceLoader::should_create_uid_file(path)) {
 				// Create a UID file and new UID, if it's invalid.
-				Ref<FileAccess> f = FileAccess::open(path + ".uid", FileAccess::WRITE);
-				if (f.is_valid()) {
-					if (fi->uid == ResourceUID::INVALID_ID) {
-						fi->uid = ResourceUID::get_singleton()->create_id();
-					} else {
-						WARN_PRINT(vformat("Missing .uid file for path \"%s\". The file was re-created from cache.", path));
+				bool generate_uid_files = GLOBAL_GET("editor/resource/generate_uid_files");
+				bool generate_uid_files_for_addons = GLOBAL_GET("editor/resource/generate_uid_files_for_addons");
+				if (generate_uid_files && (generate_uid_files_for_addons || !path.begins_with("res://addons/"))) {
+					Ref<FileAccess> f = FileAccess::open(path + ".uid", FileAccess::WRITE);
+					if (f.is_valid()) {
+						if (fi->uid == ResourceUID::INVALID_ID) {
+							fi->uid = ResourceUID::get_singleton()->create_id();
+						} else {
+							WARN_PRINT(vformat("Missing .uid file for path \"%s\". The file was re-created from cache.", path));
+						}
+						f->store_line(ResourceUID::get_singleton()->id_to_text(fi->uid));
 					}
-					f->store_line(ResourceUID::get_singleton()->id_to_text(fi->uid));
 				}
 			}
 		}
