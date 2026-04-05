@@ -792,6 +792,7 @@ void ShaderTextEditor::_shader_changed() {
 		return;
 	}
 	dependencies_changed = true;
+	reload_text();
 	_validate_script();
 	if (edited_res->is_built_in() && previous_name != get_document_name()) {
 		previous_name = get_document_name();

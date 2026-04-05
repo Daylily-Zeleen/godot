@@ -202,6 +202,7 @@ void ScriptTextEditor::set_edited_resource(const Ref<Resource> &p_res) {
 	ERR_FAIL_COND(edited_res.is_valid());
 
 	edited_res = p_res;
+	edited_res->connect_changed(callable_mp((TextEditorBase *)this, &TextEditorBase::reload_text));
 
 	Ref<Script> script = edited_res;
 	ERR_FAIL_COND(script.is_null());
